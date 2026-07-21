@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFanDecay, requirement, saturation } from "./economy";
+import { applyFanDecay, requirement, saturation, staminaMax } from "./economy";
 
 describe("saturation", () => {
     it("ファン0では飽和なし（補正1）", () => {
@@ -30,8 +30,8 @@ describe("requirement", () => {
         expect(requirement(50)).toBeCloseTo(20);
     });
 
-    it("ファン数が10倍で要求値+240（log10なので桁で伸びる）", () => {
-        expect(requirement(500)).toBeCloseTo(260);
+    it("ファン数が10倍で要求値+80（log10なので桁で伸びる）", () => {
+        expect(requirement(500)).toBeCloseTo(100);
     });
 
     it("ファン数が増えるほど要求値は単調増加する", () => {
@@ -42,5 +42,16 @@ describe("requirement", () => {
         const value = requirement(0);
         expect(Number.isFinite(value)).toBe(true);
         expect(value).toBeCloseTo(requirement(1));
+    });
+});
+
+describe("staminaMax", () => {
+    it("staminaParam=0で基礎値100", () => {
+        expect(staminaMax(0)).toBe(100);
+    });
+
+    it("staminaParamが増えるほど上限も増える（0.5倍の緩やかな線形）", () => {
+        expect(staminaMax(100)).toBe(150);
+        expect(staminaMax(1000)).toBe(600);
     });
 });

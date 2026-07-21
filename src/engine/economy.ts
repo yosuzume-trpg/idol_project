@@ -25,3 +25,8 @@ export function requirement(fans: number): number {
         Math.log10(Math.max(fans, 1) / BALANCE.requirementFanBase) * BALANCE.requirementLogSlope
     );
 }
+
+/** スタミナ上限（§2.2）。パラメータ「スタミナ」に連動して緩やかに成長する（マイルストーン6で確定） */
+export function staminaMax(staminaParam: number): number {
+    return BALANCE.staminaMaxBase + staminaParam * BALANCE.staminaMaxGrowthRate;
+}

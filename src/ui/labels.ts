@@ -3,7 +3,8 @@
 // UI表示用の定数のみ。ロジックは持たない
 // =============================================================
 
-import type { Genre, ParamKey, ScoreBand } from "@/src/engine/types";
+import type { SongStageId, VideoStageId } from "@/src/engine/project";
+import type { EquipmentSlot, Genre, ParamKey, ScoreBand, Video } from "@/src/engine/types";
 
 export const PARAM_LABELS: Record<ParamKey, string> = {
     vocalTechnique: "ボーカル技術",
@@ -43,4 +44,30 @@ export const SCORE_BAND_LABELS: Record<ScoreBand, string> = {
     weak: "不発",
     fail: "失敗",
     accident: "事故",
+};
+
+export const VIDEO_KIND_LABELS: Record<Video["kind"], string> = {
+    song: "歌動画",
+    dance: "ダンス動画",
+    variety: "企画動画",
+};
+
+export const VIDEO_STAGE_LABELS: Record<VideoStageId, string> = {
+    shoot: "撮影",
+    edit: "編集",
+    publish: "サムネ/公開",
+};
+
+export const SONG_STAGE_LABELS: Record<SongStageId, string> = {
+    lyrics: "作詞",
+    composition: "作曲",
+    recording: "レコーディング",
+};
+
+export const EQUIPMENT_LABELS: Record<EquipmentSlot, string> = {
+    mic: "マイク",
+    camera: "カメラ/照明",
+    pc: "PC/ソフト",
+    outfit: "衣装",
+    practiceEnv: "練習環境",
 };

@@ -145,6 +145,17 @@ describe("resolveRolls / scoreBand", () => {
         expect(score).toBeCloseTo(3.5);
     });
 
+    it("equipmentBonusは全ロールの実効値に一律加算される（§12.3）", () => {
+        const specs: RollSpec[] = [
+            { param: "talk", weight: 3 },
+            { param: "reaction", weight: 2 },
+        ];
+        const rng = sequenceRng([50, 50]);
+        const { outcomes } = resolveRolls(specs, { talk: 0, reaction: 10 }, 100, 0, rng, 0, 30);
+        expect(outcomes[0].effectiveValue).toBe(30); // 0+30
+        expect(outcomes[1].effectiveValue).toBe(40); // 10+30
+    });
+
     it("クリティカルは重み2倍で加算される", () => {
         const specs: RollSpec[] = [{ param: "talk", weight: 3 }];
         const rng = sequenceRng([1]); // クリティカル

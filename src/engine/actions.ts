@@ -6,11 +6,12 @@
 
 import { BALANCE } from "./balance";
 import { requirement } from "./economy";
+import { equipmentBonus } from "./equipment";
 import { genreRollSpec } from "./genre";
-import { activityParamGains } from "./growth";
-import { mentalPenalty, resolveRolls, scoreBand } from "./judge";
+import { activityParamGains, experienceParamGains, mergeParamGains } from "./growth";
+import { isSuccessBand, mentalPenalty, resolveRolls, scoreBand } from "./judge";
 import { computeStreamResult } from "./streaming";
-import type { ActionDef, ActionResult, Character, Genre, Rng } from "./types";
+import type { ActionDef, ActionResult, Character, Equipment, Genre, Rng } from "./types";
 
 export const STREAM_ACTIONS: Record<"chatStream" | "songStream", ActionDef> = {
     chatStream: {
@@ -57,6 +58,7 @@ export function executeStreamAction(
     actionId: StreamActionId,
     character: Character,
     fans: number,
+    equipment: Equipment,
     genre: Genre | undefined,
     rng: Rng
 ): StreamActionExecution {
@@ -64,8 +66,18 @@ export function executeStreamAction(
     const specs = def.genreSlot && genre ? [...def.rolls, genreRollSpec(genre)] : def.rolls;
     const req = requirement(fans);
     const penalty = mentalPenalty(character.mental);
+    // マイク補正（§12.1）: 配信系全ロールに一律加算
+    const micBonus = equipmentBonus(equipment.mic.level);
 
-    const { outcomes, score } = resolveRolls(specs, character.params, req, character.params.luck, rng, penalty);
+    const { outcomes, score } = resolveRolls(
+        specs,
+        character.params,
+        req,
+        character.params.luck,
+        rng,
+        penalty,
+        micBonus
+    );
     const hasFumble = outcomes.some((outcome) => outcome.fumble);
     const { band, scoreCoef } = scoreBand(score, hasFumble);
     const stream = computeStreamResult(fans, band, scoreCoef);
@@ -80,7 +92,10 @@ export function executeStreamAction(
         effects: {
             money: stream.money,
             fans: stream.fanDelta,
-            paramGains: activityParamGains(outcomes),
+            paramGains: mergeParamGains(
+                activityParamGains(outcomes),
+                experienceParamGains(outcomes, isSuccessBand(band), rng)
+            ),
             mentalDelta,
         },
     };

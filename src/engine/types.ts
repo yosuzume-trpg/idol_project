@@ -94,6 +94,10 @@ export type RollOutcome = {
     param: ParamKey;
     weight: number;
     die: number;
+    /** そのロールで使われた実効値（表示・検証用） */
+    effectiveValue: number;
+    /** そのロールで使われた要求値（表示・検証用） */
+    requirement: number;
     success: boolean;
     critical: boolean;
     fumble: boolean;

@@ -53,7 +53,7 @@ export function resolveRoll(
     const rate = successRate(effectiveValue, requirement, penalty);
     const success = critical || (!fumble && die <= rate);
 
-    return { param: spec.param, weight: spec.weight, die, success, critical, fumble };
+    return { param: spec.param, weight: spec.weight, die, effectiveValue, requirement, success, critical, fumble };
 }
 
 /** 1ロールのスコア寄与（クリティカルは重み2倍、ファンブルは重みマイナス、通常失敗は0） */
@@ -63,18 +63,27 @@ export function rollScoreContribution(outcome: RollOutcome): number {
     return outcome.success ? outcome.weight : 0;
 }
 
-/** ロール構成をまとめて解決し、合計スコアを算出する */
+/**
+ * ロール構成をまとめて解決し、合計スコアを算出する。
+ * requirementは全ロール共通の固定値、またはロールのパラメータごとに要求値を変える関数を渡せる
+ * （例: レッスンでは対象パラメータだけでなく支援ロールも「そのロール自身のパラメータの現在値」を要求値にしたいため）。
+ * equipmentBonusは装備補正（§12.3「実効値＝パラメータ素値＋装備補正」）。penaltyとは別軸で、
+ * 要求値の大小に応じて効果が変わる実効値側に加算する（penaltyは成功率%への直接加算）
+ */
 export function resolveRolls(
     specs: RollSpec[],
     effectiveValues: Partial<Params>,
-    requirement: number,
+    requirement: number | ((param: RollSpec["param"]) => number),
     luck: number,
     rng: Rng,
-    penalty = 0
+    penalty = 0,
+    equipmentBonus = 0
 ): { outcomes: RollOutcome[]; score: number } {
-    const outcomes = specs.map((spec) =>
-        resolveRoll(spec, effectiveValues[spec.param] ?? 0, requirement, luck, rng, penalty)
-    );
+    const outcomes = specs.map((spec) => {
+        const req = typeof requirement === "function" ? requirement(spec.param) : requirement;
+        const effectiveValue = (effectiveValues[spec.param] ?? 0) + equipmentBonus;
+        return resolveRoll(spec, effectiveValue, req, luck, rng, penalty);
+    });
     const score = outcomes.reduce((sum, outcome) => sum + rollScoreContribution(outcome), 0);
     return { outcomes, score };
 }
@@ -90,4 +99,9 @@ export function scoreBand(score: number, hasFumble: boolean): { band: ScoreBand;
     // scoreTableの最終行は min: -Infinity のため必ずいずれかにヒットする
     const entry = BALANCE.scoreTable.find((row) => score >= row.min)!;
     return { band: entry.band, scoreCoef: entry.coef };
+}
+
+/** スコア帯が「標準成功以上」（不発/失敗/事故ではない）かどうか。レッスン成長判定・経験系パラメータ確率成長で使用 */
+export function isSuccessBand(band: ScoreBand): boolean {
+    return band === "legendary" || band === "great" || band === "good" || band === "standard";
 }

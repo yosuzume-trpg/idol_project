@@ -7,11 +7,30 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { applyRest, executeStreamAction, type StreamActionId } from "@/src/engine/actions";
+import { applyRest, executeStreamAction, STREAM_ACTIONS, type StreamActionId } from "@/src/engine/actions";
 import { BALANCE } from "@/src/engine/balance";
 import { runDailyBatch } from "@/src/engine/dailyBatch";
+import { staminaMax } from "@/src/engine/economy";
+import { equipmentUpgradeCost, upgradeEquipmentSlot } from "@/src/engine/equipment";
+import { executeJob, type JobId } from "@/src/engine/jobs";
+import { executeLesson, lessonCost, lessonTarget, LESSONS, type LessonId } from "@/src/engine/lessons";
+import {
+    advanceProject,
+    startSongProject as createSongProject,
+    startVideoProject as createVideoProject,
+} from "@/src/engine/project";
 import { createRng } from "@/src/engine/rng";
-import type { ActionResult, Character, Equipment, GameState, Genre, Params, ParamKey } from "@/src/engine/types";
+import type {
+    ActionResult,
+    Character,
+    Equipment,
+    EquipmentSlot,
+    GameState,
+    Genre,
+    ParamKey,
+    Params,
+    Video,
+} from "@/src/engine/types";
 import { CURRENT_SAVE_VERSION, migrateSaveData } from "./migrations";
 import { idbStorage } from "./storage";
 
@@ -46,6 +65,7 @@ const INITIAL_EQUIPMENT: Equipment = {
 };
 
 function createInitialGameState(): GameState {
+    const initialStaminaMax = staminaMax(INITIAL_PARAMS.staminaParam);
     return {
         day: 0,
         ap: BALANCE.apPerDay,
@@ -53,8 +73,8 @@ function createInitialGameState(): GameState {
         character: {
             name: "配信者",
             params: INITIAL_PARAMS,
-            stamina: BALANCE.staminaMaxBase,
-            staminaMax: BALANCE.staminaMaxBase,
+            stamina: initialStaminaMax,
+            staminaMax: initialStaminaMax,
             mental: BALANCE.mentalMax,
         },
         npcs: [],
@@ -83,6 +103,27 @@ function applyParamGains(params: Params, gains: Partial<Params> | undefined): Pa
     return next;
 }
 
+/**
+ * パラメータ上昇・スタミナ/メンタル増減をまとめてキャラクターへ適用する。
+ * スタミナ上限（§2.2）はstaminaParamに連動するため、パラメータ変化のたびに再計算する
+ */
+function applyGrowth(
+    character: Character,
+    gains: Partial<Params> | undefined,
+    staminaDelta: number,
+    mentalDelta: number
+): Character {
+    const params = applyParamGains(character.params, gains);
+    const nextStaminaMax = staminaMax(params.staminaParam);
+    return {
+        ...character,
+        params,
+        staminaMax: nextStaminaMax,
+        stamina: Math.max(0, Math.min(nextStaminaMax, character.stamina + staminaDelta)),
+        mental: Math.max(0, Math.min(BALANCE.mentalMax, character.mental + mentalDelta)),
+    };
+}
+
 export type GameStore = GameState & {
     version: number;
     rngSeed: number;
@@ -90,6 +131,12 @@ export type GameStore = GameState & {
     lastResult: ActionResult | null;
     performStream: (actionId: StreamActionId, genre?: Genre) => void;
     rest: () => void;
+    performLesson: (lessonId: LessonId, target?: ParamKey) => void;
+    startVideoProject: (videoKind: Video["kind"], genre?: Genre) => void;
+    startSongProject: (genre: Genre) => void;
+    performProjectStage: () => void;
+    performJob: (jobId: JobId) => void;
+    upgradeEquipment: (slot: EquipmentSlot) => void;
 };
 
 export const useGameStore = create<GameStore>()(
@@ -128,6 +175,12 @@ export const useGameStore = create<GameStore>()(
                 });
             }
 
+            /** 1日3AP・1アクション1APなので、その日の消費AP数を通し番号にしてシードをずらす */
+            function rngForThisAction(state: GameStore) {
+                const actionIndex = BALANCE.apPerDay - state.ap;
+                return createRng(state.rngSeed + state.day * 1000 + actionIndex);
+            }
+
             return {
                 ...createInitialGameState(),
                 version: CURRENT_SAVE_VERSION,
@@ -138,21 +191,23 @@ export const useGameStore = create<GameStore>()(
                 performStream: (actionId, genre) => {
                     const state = get();
                     if (state.ap <= 0) return;
+                    if (state.character.stamina < STREAM_ACTIONS[actionId].staminaCost) return;
 
-                    // 1日3AP・1アクション1APなので、その日の消費AP数を通し番号にしてシードをずらす
-                    const actionIndex = BALANCE.apPerDay - state.ap;
-                    const rng = createRng(state.rngSeed + state.day * 1000 + actionIndex);
-                    const execution = executeStreamAction(actionId, state.character, state.fans, genre, rng);
-
-                    const character: Character = {
-                        ...state.character,
-                        stamina: Math.max(0, state.character.stamina + execution.staminaDelta),
-                        mental: Math.max(
-                            0,
-                            Math.min(BALANCE.mentalMax, state.character.mental + execution.mentalDelta)
-                        ),
-                        params: applyParamGains(state.character.params, execution.result.effects.paramGains),
-                    };
+                    const rng = rngForThisAction(state);
+                    const execution = executeStreamAction(
+                        actionId,
+                        state.character,
+                        state.fans,
+                        state.equipment,
+                        genre,
+                        rng
+                    );
+                    const character = applyGrowth(
+                        state.character,
+                        execution.result.effects.paramGains,
+                        execution.staminaDelta,
+                        execution.mentalDelta
+                    );
 
                     set({
                         ap: state.ap - 1,
@@ -172,6 +227,114 @@ export const useGameStore = create<GameStore>()(
                     set({ ap: state.ap - 1, character: applyRest(state.character), lastResult: null });
                     advanceDayIfNeeded();
                 },
+
+                performLesson: (lessonId, target) => {
+                    const state = get();
+                    if (state.ap <= 0) return;
+
+                    const def = LESSONS[lessonId];
+                    const targetParam = lessonTarget(def, target);
+                    const cost = lessonCost(state.character.params, targetParam);
+                    if (state.money < cost) return;
+                    if (state.character.stamina < def.staminaCost) return;
+
+                    const rng = rngForThisAction(state);
+                    const execution = executeLesson(lessonId, target, state.character, state.equipment, rng);
+                    const character = applyGrowth(
+                        state.character,
+                        execution.result.effects.paramGains,
+                        execution.staminaDelta,
+                        execution.mentalDelta
+                    );
+
+                    set({
+                        ap: state.ap - 1,
+                        money: Math.max(0, state.money - execution.cost),
+                        character,
+                        lastResult: execution.result,
+                    });
+
+                    advanceDayIfNeeded();
+                },
+
+                startVideoProject: (videoKind, genre) => {
+                    const state = get();
+                    if (state.project) return;
+                    set({ project: createVideoProject(videoKind, genre) });
+                },
+
+                startSongProject: (genre) => {
+                    const state = get();
+                    if (state.project) return;
+                    set({ project: createSongProject(genre) });
+                },
+
+                performProjectStage: () => {
+                    const state = get();
+                    if (state.ap <= 0 || !state.project) return;
+                    if (state.character.stamina < BALANCE.activityStaminaCost.production) return;
+
+                    const rng = rngForThisAction(state);
+                    const previousVideoDay =
+                        state.videos.length > 0 ? Math.max(...state.videos.map((v) => v.releaseDay)) : undefined;
+                    const execution = advanceProject(
+                        state.project,
+                        state.character,
+                        state.fans,
+                        state.equipment,
+                        state.day,
+                        previousVideoDay,
+                        rng
+                    );
+                    const character = applyGrowth(
+                        state.character,
+                        execution.result.effects.paramGains,
+                        execution.staminaDelta,
+                        execution.mentalDelta
+                    );
+                    const finished = execution.completedVideo !== undefined || execution.completedSong !== undefined;
+
+                    set({
+                        ap: state.ap - 1,
+                        character,
+                        project: finished ? null : execution.project,
+                        videos: execution.completedVideo ? [...state.videos, execution.completedVideo] : state.videos,
+                        songs: execution.completedSong ? [...state.songs, execution.completedSong] : state.songs,
+                        lastResult: execution.result,
+                    });
+
+                    advanceDayIfNeeded();
+                },
+
+                performJob: (jobId) => {
+                    const state = get();
+                    if (state.ap <= 0) return;
+                    if (state.character.stamina < BALANCE.jobs.list[jobId].staminaCost) return;
+
+                    const rng = rngForThisAction(state);
+                    const execution = executeJob(jobId, state.character, rng);
+                    const character = applyGrowth(state.character, execution.result.effects.paramGains, execution.staminaDelta, 0);
+
+                    set({
+                        ap: state.ap - 1,
+                        money: Math.max(0, state.money + (execution.result.effects.money ?? 0)),
+                        character,
+                        lastResult: execution.result,
+                    });
+
+                    advanceDayIfNeeded();
+                },
+
+                upgradeEquipment: (slot) => {
+                    const state = get();
+                    const cost = equipmentUpgradeCost(state.equipment[slot].level);
+                    if (state.money < cost) return;
+
+                    set({
+                        money: state.money - cost,
+                        equipment: upgradeEquipmentSlot(state.equipment, slot),
+                    });
+                },
             };
         },
         {
@@ -181,8 +344,20 @@ export const useGameStore = create<GameStore>()(
             migrate: migrateSaveData,
             // ビルド/静的書き出し時にIndexedDBへアクセスしないよう、rehydrateはクライアントで手動実行する
             skipHydration: true,
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 関数は永続化対象から除外するだけなので中身は使わない
-            partialize: ({ performStream, rest, ...persisted }) => persisted,
+            // 関数は永続化対象から除外するだけなので中身は使わない
+            /* eslint-disable @typescript-eslint/no-unused-vars */
+            partialize: ({
+                performStream,
+                rest,
+                performLesson,
+                startVideoProject,
+                startSongProject,
+                performProjectStage,
+                performJob,
+                upgradeEquipment,
+                ...persisted
+            }) => persisted,
+            /* eslint-enable @typescript-eslint/no-unused-vars */
         }
     )
 );

@@ -1,19 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { applyRest, executeStreamAction, STREAM_ACTIONS } from "./actions";
 import { BALANCE } from "./balance";
-import type { Character, Params, Rng } from "./types";
+import type { Character, Equipment, Params, Rng } from "./types";
 
-/** 指定した出目を順番に返すテスト用Rng */
-function sequenceRng(dice: number[]): Rng {
+const ZERO_EQUIPMENT: Equipment = {
+    mic: { level: 0 },
+    camera: { level: 0 },
+    pc: { level: 0 },
+    outfit: { level: 0 },
+    practiceEnv: { level: 0 },
+};
+
+/**
+ * 指定した出目を順番に返すテスト用Rng。
+ * randomsを省略した場合は常に1を返す（経験系パラメータの確率成長(閾値0.2)を発生させない）
+ */
+function sequenceRng(dice: number[], randoms: number[] = []): Rng {
     let i = 0;
+    let r = 0;
     return {
         d100: () => {
             if (i >= dice.length) throw new Error("d100が想定回数を超えて呼ばれた");
             return dice[i++];
         },
-        random: () => {
-            throw new Error("このテストではrandomは使用しない");
-        },
+        random: () => (r < randoms.length ? randoms[r++] : 1),
         int: () => {
             throw new Error("このテストではintは使用しない");
         },
@@ -62,13 +72,14 @@ describe("executeStreamAction", () => {
         const character = makeCharacter();
         // fans=50 → requirement=20、実効値100なら成功率は95%クランプでほぼ確実に成功する出目を選ぶ
         const rng = sequenceRng([50, 50, 50, 50]);
-        const { result, staminaDelta, mentalDelta } = executeStreamAction("chatStream", character, 50, undefined, rng);
+        const { result, staminaDelta, mentalDelta } = executeStreamAction("chatStream", character, 50, ZERO_EQUIPMENT, undefined, rng);
 
         expect(result.score).toBe(7);
         expect(result.band).toBe("great");
         expect(result.effects.money).toBeCloseTo(30);
         expect(result.effects.fans).toBeCloseTo(4.399983334027749);
-        // talk/reactionはレッスン対応パラメータなので活動経験値が入る。charm/luckは対象外
+        // talk/reactionはレッスン対応パラメータなので活動経験値が確定で入る。
+        // charm/luckは経験系パラメータで確率成長(20%)の対象だが、randomのデフォルト値(1)では発生しない
         expect(result.effects.paramGains?.talk).toBeCloseTo(BALANCE.activityGain);
         expect(result.effects.paramGains?.reaction).toBeCloseTo(BALANCE.activityGain);
         expect(result.effects.paramGains?.charm).toBeUndefined();
@@ -76,6 +87,15 @@ describe("executeStreamAction", () => {
 
         expect(staminaDelta).toBe(-BALANCE.activityStaminaCost.stream);
         expect(mentalDelta).toBe(-BALANCE.activityMentalCost);
+    });
+
+    it("標準成功以上でrandomが閾値(0.2)未満なら経験系パラメータ（charm/luck）が確率成長する", () => {
+        const character = makeCharacter();
+        const rng = sequenceRng([50, 50, 50, 50], [0.1, 0.1]); // charm→0.1(成長), luck→0.1(成長)
+        const { result } = executeStreamAction("chatStream", character, 50, ZERO_EQUIPMENT, undefined, rng);
+
+        expect(result.effects.paramGains?.charm).toBeCloseTo(BALANCE.activityGain);
+        expect(result.effects.paramGains?.luck).toBeCloseTo(BALANCE.activityGain);
     });
 
     it("メンタルが30%未満だと全ロールにペナルティ-10が掛かり成功しにくくなる", () => {
@@ -86,7 +106,7 @@ describe("executeStreamAction", () => {
         // 他3ロール(reaction/charm/luck)は実効値100と十分高いのでペナルティ後も出目50で成功する
         const rng = sequenceRng([45, 50, 50, 50]);
 
-        const { result } = executeStreamAction("chatStream", character, 50, undefined, rng);
+        const { result } = executeStreamAction("chatStream", character, 50, ZERO_EQUIPMENT, undefined, rng);
 
         expect(result.rolls[0].param).toBe("talk");
         expect(result.rolls[0].success).toBe(false);
@@ -96,7 +116,7 @@ describe("executeStreamAction", () => {
     it("歌枠配信はジャンル指定でジャンル対応パラメータのロールが追加される", () => {
         const character = makeCharacter();
         const rng = sequenceRng([50, 50, 50, 50, 50]);
-        const { result } = executeStreamAction("songStream", character, 50, "rock", rng);
+        const { result } = executeStreamAction("songStream", character, 50, ZERO_EQUIPMENT, "rock", rng);
 
         expect(result.rolls).toHaveLength(5);
         expect(result.rolls.at(-1)?.param).toBe("charisma");
@@ -105,9 +125,23 @@ describe("executeStreamAction", () => {
     it("ジャンル未指定なら歌枠配信のジャンル枠は追加されない", () => {
         const character = makeCharacter();
         const rng = sequenceRng([50, 50, 50, 50]);
-        const { result } = executeStreamAction("songStream", character, 50, undefined, rng);
+        const { result } = executeStreamAction("songStream", character, 50, ZERO_EQUIPMENT, undefined, rng);
 
         expect(result.rolls).toHaveLength(4);
+    });
+
+    it("マイク補正（§12.3）は配信系全ロールの実効値に一律加算される", () => {
+        const params = { ...BASE_PARAMS, talk: 10, reaction: 10, charm: 10, luck: 10 };
+        const character = makeCharacter({ params });
+        // fans=50→requirement=20。実効値10のままだと成功率40%（die=55は失敗）
+        const equipment: Equipment = { ...ZERO_EQUIPMENT, mic: { level: 10 } };
+        // マイク補正=10×3=30 → 実効値40、成功率70%（die=55は成功）
+        const rng = sequenceRng([55, 55, 55, 55]);
+
+        const { result } = executeStreamAction("chatStream", character, 50, equipment, undefined, rng);
+
+        expect(result.rolls.every((r) => r.effectiveValue === 40)).toBe(true);
+        expect(result.rolls.every((r) => r.success)).toBe(true);
     });
 });
 
