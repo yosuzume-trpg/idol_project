@@ -5,19 +5,21 @@ import { STREAM_ACTIONS } from "@/src/engine/actions";
 import { BALANCE } from "@/src/engine/balance";
 import { equipmentBonus, equipmentUpgradeCost } from "@/src/engine/equipment";
 import type { JobId } from "@/src/engine/jobs";
-import { lessonCost, LESSONS, type LessonId } from "@/src/engine/lessons";
-import type { EquipmentSlot, Genre, ParamKey, Video } from "@/src/engine/types";
+import { lessonCost, LESSONS } from "@/src/engine/lessons";
+import type { EquipmentSlot, Genre, Video } from "@/src/engine/types";
 import { useGameStore } from "@/src/store/gameStore";
 import { Button, FansDisplay, MoneyDisplay, ParamBar, RollResultLine, ScoreBandBadge } from "@/src/ui/components";
 import {
     EQUIPMENT_LABELS,
     GENRE_LABELS,
+    PARAM_KEYS,
     PARAM_LABELS,
     SONG_STAGE_LABELS,
     VIDEO_KIND_LABELS,
     VIDEO_STAGE_LABELS,
 } from "@/src/ui/labels";
 import { SONG_STAGE_IDS, VIDEO_STAGE_IDS } from "@/src/engine/project";
+import { DebugPanel } from "@/src/ui/DebugPanel";
 
 const GENRES: Genre[] = ["idol", "rock", "ballad", "edm", "comedy", "rap"];
 const VIDEO_KINDS: Video["kind"][] = ["song", "dance", "variety"];
@@ -30,7 +32,6 @@ function videoKindHasGenre(kind: Video["kind"]): boolean {
 
 export function GameScreen() {
     const [genre, setGenre] = useState<Genre>("idol");
-    const [lessonTargets, setLessonTargets] = useState<Partial<Record<LessonId, ParamKey>>>({});
     const [videoKind, setVideoKind] = useState<Video["kind"]>("song");
     const [videoGenre, setVideoGenre] = useState<Genre | "">("");
     const [songGenre, setSongGenre] = useState<Genre>("idol");
@@ -119,18 +120,29 @@ export function GameScreen() {
                 <p className="text-xs text-zinc-600 dark:text-zinc-100">
                     固定賃金の安定収入。ファンは増えないが、序盤の資金源として配信より安定している。
                 </p>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-2">
                     {(Object.keys(BALANCE.jobs.list) as JobId[]).map((jobId) => {
                         const def = BALANCE.jobs.list[jobId];
                         return (
-                            <Button
-                                key={jobId}
-                                variant="secondary"
-                                disabled={!canAct || !hasStamina(def.staminaCost)}
-                                onClick={() => performJob(jobId)}
-                            >
-                                {def.label}（{def.wage}G）
-                            </Button>
+                            <div key={jobId} className="flex flex-wrap items-center gap-2">
+                                <span className="w-32 shrink-0 text-sm text-zinc-900 dark:text-zinc-50">
+                                    {def.label}
+                                </span>
+                                <span className="text-xs text-zinc-600 dark:text-zinc-100">賃金 {def.wage}G</span>
+                                <span className="text-xs text-zinc-600 dark:text-zinc-100">
+                                    要求: {PARAM_LABELS.luck}
+                                </span>
+                                <span className="text-xs text-zinc-600 dark:text-zinc-100">
+                                    成長: {PARAM_LABELS[def.param]}
+                                </span>
+                                <Button
+                                    variant="secondary"
+                                    disabled={!canAct || !hasStamina(def.staminaCost)}
+                                    onClick={() => performJob(jobId)}
+                                >
+                                    働く
+                                </Button>
+                            </div>
                         );
                     })}
                 </div>
@@ -140,40 +152,23 @@ export function GameScreen() {
                 <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-100">レッスン</h2>
                 <div className="flex flex-col gap-2">
                     {Object.values(LESSONS).map((def) => {
-                        const resolvedTarget = def.fixedTarget ?? lessonTargets[def.id] ?? def.targetOptions![0];
-                        const cost = Math.floor(lessonCost(character.params, resolvedTarget));
+                        const cost = Math.floor(lessonCost(character.params, def.target));
                         const affordable = money >= cost;
                         const staminaOk = hasStamina(def.staminaCost);
 
                         return (
                             <div key={def.id} className="flex flex-wrap items-center gap-2">
-                                <span className="w-32 shrink-0 text-sm text-zinc-900 dark:text-zinc-50">
+                                <span className="w-52 shrink-0 whitespace-nowrap text-sm text-zinc-900 dark:text-zinc-50">
                                     {def.label}
                                 </span>
-                                {def.targetOptions && (
-                                    <select
-                                        className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                                        value={resolvedTarget}
-                                        onChange={(event) =>
-                                            setLessonTargets((prev) => ({
-                                                ...prev,
-                                                [def.id]: event.target.value as ParamKey,
-                                            }))
-                                        }
-                                        aria-label={`${def.label}の対象`}
-                                    >
-                                        {def.targetOptions.map((param) => (
-                                            <option key={param} value={param}>
-                                                {PARAM_LABELS[param]}
-                                            </option>
-                                        ))}
-                                    </select>
-                                )}
+                                <span className="w-28 shrink-0 whitespace-nowrap text-xs text-zinc-600 dark:text-zinc-100">
+                                    対象: {PARAM_LABELS[def.target]}
+                                </span>
                                 <span className="text-xs text-zinc-600 dark:text-zinc-100">費用 {cost}G</span>
                                 <Button
                                     variant="secondary"
                                     disabled={!canAct || !affordable || !staminaOk}
-                                    onClick={() => performLesson(def.id, resolvedTarget)}
+                                    onClick={() => performLesson(def.id)}
                                 >
                                     受講
                                 </Button>
@@ -325,14 +320,14 @@ export function GameScreen() {
 
             <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
                 <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-100">パラメータ</h2>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                    {(["talk", "reaction", "vocalTechnique", "vocalExpression", "charm", "luck"] as const).map(
-                        (param) => (
-                            <ParamBar key={param} label={PARAM_LABELS[param]} value={character.params[param]} />
-                        )
-                    )}
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                    {PARAM_KEYS.map((param) => (
+                        <ParamBar key={param} label={PARAM_LABELS[param]} value={character.params[param]} />
+                    ))}
                 </div>
             </section>
+
+            {process.env.NODE_ENV !== "production" && <DebugPanel />}
         </div>
     );
 }

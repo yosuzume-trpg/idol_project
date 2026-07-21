@@ -27,6 +27,9 @@ export const PARAM_LABELS: Record<ParamKey, string> = {
     gameSkill: "ゲームスキル",
 };
 
+/** 18パラメータ全キー（PARAM_LABELSの定義順＝CLAUDE.md用語マッピング順） */
+export const PARAM_KEYS = Object.keys(PARAM_LABELS) as ParamKey[];
+
 export const GENRE_LABELS: Record<Genre, string> = {
     idol: "アイドル系",
     rock: "ロック系",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BALANCE } from "./balance";
-import { executeLesson, lessonCost, lessonGainAmount, lessonTarget, LESSONS } from "./lessons";
+import { executeLesson, lessonCost, lessonGainAmount, LESSONS } from "./lessons";
 import type { Character, Equipment, Params, Rng } from "./types";
 
 const ZERO_EQUIPMENT: Equipment = {
@@ -60,19 +60,15 @@ describe("LESSONS", () => {
         const total = def.targetWeight + def.supportRolls.reduce((sum, r) => sum + r.weight, 0);
         expect(total).toBe(7);
     });
-});
 
-describe("lessonTarget", () => {
-    it("選択式レッスンは指定したパラメータを返す", () => {
-        expect(lessonTarget(LESSONS.vocalLesson, "vocalExpression")).toBe("vocalExpression");
+    it("支援ロールに対象パラメータ自身は含まれない（重複ロール防止）", () => {
+        for (const def of Object.values(LESSONS)) {
+            expect(def.supportRolls.some((roll) => roll.param === def.target)).toBe(false);
+        }
     });
 
-    it("選択式レッスンで未指定だとエラーになる", () => {
-        expect(() => lessonTarget(LESSONS.vocalLesson, undefined)).toThrow();
-    });
-
-    it("固定式レッスンは指定不要でfixedTargetを返す", () => {
-        expect(lessonTarget(LESSONS.gym, undefined)).toBe("staminaParam");
+    it("全17レッスンが揃っている（技術/表現などの分割済みペア10種＋ジム/ゲーム練習＋新設5種）", () => {
+        expect(Object.keys(LESSONS)).toHaveLength(17);
     });
 });
 
@@ -106,8 +102,7 @@ describe("executeLesson", () => {
         // レッスンの要求値は各ロール自身の現在値(100)-成功寄りボーナス(10)=90。基準成功率60%（die<=60で成功）
         const rng = sequenceRng([50, 50, 50, 50]);
         const { result, targetParam, cost, staminaDelta, mentalDelta } = executeLesson(
-            "vocalLesson",
-            "vocalTechnique",
+            "vocalTechniqueLesson",
             character,
             ZERO_EQUIPMENT,
             rng
@@ -120,8 +115,8 @@ describe("executeLesson", () => {
         expect(result.effects.paramGains?.vocalTechnique).toBeCloseTo(BALANCE.lessonGainSuccess);
         // staminaParamは支援ロール（対象外）として活動経験値(0.15)の対象になる
         expect(result.effects.paramGains?.staminaParam).toBeCloseTo(BALANCE.activityGain);
-        // mentalParamは経験系パラメータ。randomのデフォルト(1)では確率成長は発生しない
-        expect(result.effects.paramGains?.mentalParam).toBeUndefined();
+        // mentalParamも今回から専用レッスン(カウンセリング)ありに変更されたため、支援ロールとして活動経験値の対象になる
+        expect(result.effects.paramGains?.mentalParam).toBeCloseTo(BALANCE.activityGain);
 
         expect(staminaDelta).toBe(-BALANCE.activityStaminaCost.lesson);
         expect(mentalDelta).toBe(-BALANCE.activityMentalCost);
@@ -131,7 +126,7 @@ describe("executeLesson", () => {
         const character = makeCharacter();
         // 要求値=実効値(100)-10=90 → 基準成功率60%。出目96(>60、フォンブル閾値97未満)で通常失敗にする
         const rng = sequenceRng([96, 96, 96, 96]);
-        const { result } = executeLesson("vocalLesson", "vocalTechnique", character, ZERO_EQUIPMENT, rng);
+        const { result } = executeLesson("vocalTechniqueLesson", character, ZERO_EQUIPMENT, rng);
 
         expect(result.score).toBe(0);
         expect(result.band).toBe("fail");
@@ -146,7 +141,7 @@ describe("executeLesson", () => {
         const character = makeCharacter({ params });
         const rng = sequenceRng([50, 55, 55, 55]);
 
-        const { result } = executeLesson("vocalLesson", "vocalTechnique", character, ZERO_EQUIPMENT, rng);
+        const { result } = executeLesson("vocalTechniqueLesson", character, ZERO_EQUIPMENT, rng);
 
         expect(result.rolls[1].param).toBe("staminaParam");
         expect(result.rolls[1].success).toBe(true);
@@ -154,10 +149,10 @@ describe("executeLesson", () => {
         expect(result.rolls[2].success).toBe(true);
     });
 
-    it("固定式レッスン（ジム）はtarget未指定でもstaminaParamを鍛える", () => {
+    it("ジムはstaminaParamを鍛える", () => {
         const character = makeCharacter();
         const rng = sequenceRng([50, 50, 50]);
-        const { result, targetParam } = executeLesson("gym", undefined, character, ZERO_EQUIPMENT, rng);
+        const { result, targetParam } = executeLesson("gym", character, ZERO_EQUIPMENT, rng);
 
         expect(targetParam).toBe("staminaParam");
         expect(result.effects.paramGains?.staminaParam).toBeCloseTo(BALANCE.lessonGainSuccess);
@@ -167,7 +162,7 @@ describe("executeLesson", () => {
         const character = makeCharacter();
         // 1本目(対象:vocalTechnique)をファンブル(出目99)、残り3本を通常失敗(96)にしてスコア-2、事故判定にする
         const rng = sequenceRng([99, 96, 96, 96]);
-        const { result, mentalDelta } = executeLesson("vocalLesson", "vocalTechnique", character, ZERO_EQUIPMENT, rng);
+        const { result, mentalDelta } = executeLesson("vocalTechniqueLesson", character, ZERO_EQUIPMENT, rng);
 
         expect(result.band).toBe("accident");
         expect(mentalDelta).toBe(-BALANCE.activityMentalCost - BALANCE.accidentMentalDamage);
@@ -178,8 +173,27 @@ describe("executeLesson", () => {
         const equipment: Equipment = { ...ZERO_EQUIPMENT, practiceEnv: { level: 10 } }; // 倍率1+10×0.02=1.2
         const rng = sequenceRng([50, 50, 50, 50]);
 
-        const { result } = executeLesson("vocalLesson", "vocalTechnique", character, equipment, rng);
+        const { result } = executeLesson("vocalTechniqueLesson", character, equipment, rng);
 
         expect(result.effects.paramGains?.vocalTechnique).toBeCloseTo(BALANCE.lessonGainSuccess * 1.2);
+    });
+
+    it("新設レッスン（メイク）は愛嬌を対象パラメータとして鍛える", () => {
+        const character = makeCharacter();
+        const rng = sequenceRng([50, 50, 50]);
+        const { result, targetParam, cost } = executeLesson("makeupLesson", character, ZERO_EQUIPMENT, rng);
+
+        expect(targetParam).toBe("charm");
+        expect(cost).toBeCloseTo(150);
+        expect(result.effects.paramGains?.charm).toBeCloseTo(BALANCE.lessonGainSuccess);
+    });
+
+    it("カウンセリングはmentalParamを対象とし、支援ロールにmentalParamを含まない", () => {
+        const character = makeCharacter();
+        const rng = sequenceRng([50, 50, 50]);
+        const { result, targetParam } = executeLesson("counselingLesson", character, ZERO_EQUIPMENT, rng);
+
+        expect(targetParam).toBe("mentalParam");
+        expect(result.rolls.map((r) => r.param)).toEqual(["mentalParam", "staminaParam", "luck"]);
     });
 });

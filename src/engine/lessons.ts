@@ -1,6 +1,6 @@
 // =============================================================
-// レッスン（§6.4） — 現在値に比例した費用で技術系パラメータを鍛える
-// 経験系パラメータ（アイデア/カリスマ/愛嬌/交渉/メンタル/ラック）の確率成長は growth.ts で扱う
+// レッスン（§6.4） — 現在値に比例した費用で対象パラメータを鍛える
+// 技術/表現などのペアも含め、1レッスン=1対象パラメータの固定式とする（選択式UIは廃止）
 // =============================================================
 
 import { BALANCE } from "./balance";
@@ -10,20 +10,28 @@ import { isSuccessBand, mentalPenalty, resolveRolls, scoreBand } from "./judge";
 import type { ActionResult, Character, Equipment, ParamKey, Params, Rng, RollSpec, ScoreBand } from "./types";
 
 export type LessonId =
-    | "vocalLesson"
-    | "danceLesson"
+    | "vocalTechniqueLesson"
+    | "vocalExpressionLesson"
+    | "danceTechniqueLesson"
+    | "danceExpressionLesson"
+    | "lyricsLesson"
     | "compositionLesson"
-    | "editLesson"
-    | "speechLesson"
+    | "editTechniqueLesson"
+    | "editCompositionLesson"
+    | "talkLesson"
+    | "reactionLesson"
     | "gym"
-    | "gameLesson";
+    | "gameLesson"
+    | "makeupLesson"
+    | "studyLesson"
+    | "charismaLesson"
+    | "negotiationLesson"
+    | "counselingLesson";
 
 export type LessonDef = {
     id: LessonId;
     label: string;
-    /** 選択式の対象パラメータ（技術/表現など2択）。単一の場合は fixedTarget を使う */
-    targetOptions?: readonly [ParamKey, ParamKey];
-    fixedTarget?: ParamKey;
+    target: ParamKey;
     targetWeight: number;
     /** 対象パラメータ以外の固定ロール */
     supportRolls: RollSpec[];
@@ -32,11 +40,18 @@ export type LessonDef = {
     mentalCost: number;
 };
 
+// 専用レッスンが無かった経験系パラメータ（アイデア/カリスマ/愛嬌/交渉/メンタル）向けの新設レッスン共通の支援ロール型。
+// 既存のジム/ゲーム練習（対象4+支援3）と同型にする
+const GENERIC_SUPPORT: RollSpec[] = [
+    { param: "mentalParam", weight: 2 },
+    { param: "luck", weight: 1 },
+];
+
 export const LESSONS: Record<LessonId, LessonDef> = {
-    vocalLesson: {
-        id: "vocalLesson",
-        label: "ボーカルレッスン",
-        targetOptions: ["vocalTechnique", "vocalExpression"],
+    vocalTechniqueLesson: {
+        id: "vocalTechniqueLesson",
+        label: "ボーカルレッスン（技術）",
+        target: "vocalTechnique",
         targetWeight: 2,
         supportRolls: [
             { param: "staminaParam", weight: 2 },
@@ -47,10 +62,24 @@ export const LESSONS: Record<LessonId, LessonDef> = {
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
     },
-    danceLesson: {
-        id: "danceLesson",
-        label: "ダンスレッスン",
-        targetOptions: ["danceTechnique", "danceExpression"],
+    vocalExpressionLesson: {
+        id: "vocalExpressionLesson",
+        label: "ボーカルレッスン（表現）",
+        target: "vocalExpression",
+        targetWeight: 2,
+        supportRolls: [
+            { param: "staminaParam", weight: 2 },
+            { param: "mentalParam", weight: 2 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    danceTechniqueLesson: {
+        id: "danceTechniqueLesson",
+        label: "ダンスレッスン（技術）",
+        target: "danceTechnique",
         targetWeight: 2,
         supportRolls: [
             { param: "staminaParam", weight: 3 },
@@ -61,10 +90,24 @@ export const LESSONS: Record<LessonId, LessonDef> = {
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
     },
-    compositionLesson: {
-        id: "compositionLesson",
-        label: "作曲講座",
-        targetOptions: ["lyrics", "composition"],
+    danceExpressionLesson: {
+        id: "danceExpressionLesson",
+        label: "ダンスレッスン（表現）",
+        target: "danceExpression",
+        targetWeight: 2,
+        supportRolls: [
+            { param: "staminaParam", weight: 3 },
+            { param: "mentalParam", weight: 1 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    lyricsLesson: {
+        id: "lyricsLesson",
+        label: "作曲講座（作詞）",
+        target: "lyrics",
         targetWeight: 2,
         supportRolls: [
             { param: "mentalParam", weight: 3 },
@@ -75,10 +118,24 @@ export const LESSONS: Record<LessonId, LessonDef> = {
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
     },
-    editLesson: {
-        id: "editLesson",
-        label: "編集講座",
-        targetOptions: ["editTechnique", "editComposition"],
+    compositionLesson: {
+        id: "compositionLesson",
+        label: "作曲講座（作曲）",
+        target: "composition",
+        targetWeight: 2,
+        supportRolls: [
+            { param: "mentalParam", weight: 3 },
+            { param: "idea", weight: 1 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    editTechniqueLesson: {
+        id: "editTechniqueLesson",
+        label: "編集講座（技術）",
+        target: "editTechnique",
         targetWeight: 2,
         supportRolls: [
             { param: "mentalParam", weight: 2 },
@@ -89,10 +146,38 @@ export const LESSONS: Record<LessonId, LessonDef> = {
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
     },
-    speechLesson: {
-        id: "speechLesson",
-        label: "話し方教室",
-        targetOptions: ["talk", "reaction"],
+    editCompositionLesson: {
+        id: "editCompositionLesson",
+        label: "編集講座（構成）",
+        target: "editComposition",
+        targetWeight: 2,
+        supportRolls: [
+            { param: "mentalParam", weight: 2 },
+            { param: "idea", weight: 2 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    talkLesson: {
+        id: "talkLesson",
+        label: "話し方教室（トーク）",
+        target: "talk",
+        targetWeight: 2,
+        supportRolls: [
+            { param: "charm", weight: 2 },
+            { param: "mentalParam", weight: 2 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    reactionLesson: {
+        id: "reactionLesson",
+        label: "話し方教室（リアクション）",
+        target: "reaction",
         targetWeight: 2,
         supportRolls: [
             { param: "charm", weight: 2 },
@@ -106,12 +191,9 @@ export const LESSONS: Record<LessonId, LessonDef> = {
     gym: {
         id: "gym",
         label: "ジム",
-        fixedTarget: "staminaParam",
+        target: "staminaParam",
         targetWeight: 4,
-        supportRolls: [
-            { param: "mentalParam", weight: 2 },
-            { param: "luck", weight: 1 },
-        ],
+        supportRolls: GENERIC_SUPPORT,
         apCost: 1,
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
@@ -119,7 +201,7 @@ export const LESSONS: Record<LessonId, LessonDef> = {
     gameLesson: {
         id: "gameLesson",
         label: "ゲーム練習",
-        fixedTarget: "gameSkill",
+        target: "gameSkill",
         targetWeight: 4,
         supportRolls: [
             { param: "staminaParam", weight: 1 },
@@ -130,14 +212,64 @@ export const LESSONS: Record<LessonId, LessonDef> = {
         staminaCost: BALANCE.activityStaminaCost.lesson,
         mentalCost: BALANCE.activityMentalCost,
     },
+    // ---- 経験系パラメータ向けの新設レッスン（実プレイフィードバックを受けて追加）----
+    // ラック以外の5種（愛嬌/アイデア/カリスマ/交渉/メンタル）に専用レッスンを与え、
+    // growth.tsのLESSON_BACKED_PARAMSへ移す（他アクションでの支援ロール成功時も活動経験値が確定加算されるようになる）
+    makeupLesson: {
+        id: "makeupLesson",
+        label: "メイク",
+        target: "charm",
+        targetWeight: 4,
+        supportRolls: GENERIC_SUPPORT,
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    studyLesson: {
+        id: "studyLesson",
+        label: "勉強会",
+        target: "idea",
+        targetWeight: 4,
+        supportRolls: GENERIC_SUPPORT,
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    charismaLesson: {
+        id: "charismaLesson",
+        label: "カリスマ塾",
+        target: "charisma",
+        targetWeight: 4,
+        supportRolls: GENERIC_SUPPORT,
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    negotiationLesson: {
+        id: "negotiationLesson",
+        label: "交渉術セミナー",
+        target: "negotiation",
+        targetWeight: 4,
+        supportRolls: GENERIC_SUPPORT,
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
+    counselingLesson: {
+        id: "counselingLesson",
+        label: "カウンセリング",
+        target: "mentalParam",
+        targetWeight: 4,
+        // 対象がmentalParam自身なのでGENERIC_SUPPORTのmentalParam枠をスタミナに差し替える
+        supportRolls: [
+            { param: "staminaParam", weight: 2 },
+            { param: "luck", weight: 1 },
+        ],
+        apCost: 1,
+        staminaCost: BALANCE.activityStaminaCost.lesson,
+        mentalCost: BALANCE.activityMentalCost,
+    },
 };
-
-/** レッスンの対象パラメータを決定する（選択式は引数target、固定式はfixedTargetを使用） */
-export function lessonTarget(def: LessonDef, target?: ParamKey): ParamKey {
-    if (def.fixedTarget) return def.fixedTarget;
-    if (target && def.targetOptions?.includes(target)) return target;
-    throw new Error(`レッスン「${def.label}」には対象パラメータの指定が必要です`);
-}
 
 /** レッスン費用（§3.1）: 対象パラメータの現在値×1.5G */
 export function lessonCost(params: Params, targetParam: ParamKey): number {
@@ -174,13 +306,12 @@ export type LessonExecution = {
  */
 export function executeLesson(
     lessonId: LessonId,
-    target: ParamKey | undefined,
     character: Character,
     equipment: Equipment,
     rng: Rng
 ): LessonExecution {
     const def = LESSONS[lessonId];
-    const targetParam = lessonTarget(def, target);
+    const targetParam = def.target;
     const cost = lessonCost(character.params, targetParam);
     const specs: RollSpec[] = [{ param: targetParam, weight: def.targetWeight }, ...def.supportRolls];
     const penalty = mentalPenalty(character.mental);

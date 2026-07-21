@@ -3,7 +3,9 @@
 新しいClaudeセッションを開始するとき、`CLAUDE.md` と `docs/game_design_doc.md` に加えてこのファイルを読めば現状に追いつけるようにするためのメモ。
 **このファイルは開発の進行に合わせて随時更新すること。** 内容が古くなったら書き直す（追記し続けない）。
 
-最終更新: マイルストーン6「レッスン・動画/楽曲プロジェクト」＋マイルストーン9の一部（アルバイト7種・装備ショップ）前倒し実装、進行速度バグ5連発の修正、requirementLogSlope再調整（80）完了時点。
+最終更新: マイルストーン6「レッスン・動画/楽曲プロジェクト」＋マイルストーン9の一部（アルバイト7種・装備ショップ）前倒し実装、進行速度バグ5連発の修正、requirementLogSlope再調整（80）、**開発用デバッグパネル実装**、**レッスンの選択式UI廃止＋新設5レッスン（メイク/勉強会/カリスマ塾/交渉術セミナー/カウンセリング）追加**完了時点。
+
+**レッスン再編（今回）**: 技術/表現などをセレクトボックスで選ぶ形をやめ、「1レッスン=1対象パラメータ」の固定式17種に分割・拡張した（`src/engine/lessons.ts`）。あわせて愛嬌/アイデア/カリスマ/交渉/メンタルの5パラメータに専用レッスンを新設したことで、`growth.ts`の`LESSON_BACKED_PARAMS`/`EXPERIENCE_PARAMS`の分類基準（「専用レッスンの有無」）に従いこの5種をLESSON_BACKED_PARAMS側へ移動。**経験系パラメータ（専用レッスンなし・確率成長のみ）として残るのはラックだけになった。** これにより、これら5種が他アクションの支援ロールとして成功した場合も活動経験値(+0.15)が確定加算されるようになった点は地味に大きいバランス変化なので注意（詳細は`docs/game_design_doc.md`§3.1参照）。GameScreenのレッスン一覧・パラメータ表示（全18種）・アルバイト表示（要求/成長パラメータ併記）もあわせて更新済み。
 
 **⚠️ 進行速度・後半バランスに関する重要な修正履歴**:
 
@@ -35,14 +37,21 @@
 - [x]   5. 配信アクション＋最小UI（`src/engine/actions.ts`, `streaming.ts`, `genre.ts`, `growth.ts`, `src/store/*`, `src/ui/GameScreen.tsx`）
 - [x]   6. レッスン・動画/楽曲プロジェクト（`src/engine/lessons.ts`, `project.ts`）
 - [x]   9のうちアルバイト・装備ショップを前倒し実装（`src/engine/jobs.ts`, `src/engine/equipment.ts`）。放置スケジュールは未着手のまま。装備の衣装(outfit)は購入のみで効果は未実装（ライブ実装時に有効化予定）
+- [x]   開発用デバッグパネル（`src/ui/DebugPanel.tsx`）
 - [ ]   7. トレンド＋SNSチェック＋ゲーム購入 ← **次はここ**
 - [ ]   8. ライブ
 - [ ]   9. 残り（放置スケジュール、衣装の効果）
 - [ ]   10. サブコンテンツ（キャラ選択画面・NPCデート・アルバム）
 
-**開発用デバッグパネル**（CLAUDE.md記載の正式機能）はまだ未着手。ユーザーは現状クリッカー（即時結果反映のUI）で手動デバッグしている。日数スキップ・パラメータ直接編集ができるとより効率的なので、マイルストーン7と並行するか前に着手することを推奨（複数回持ち越し）。
+**開発用デバッグパネル**（CLAUDE.md記載の正式機能）を実装済み（`src/ui/DebugPanel.tsx`）。`GameScreen.tsx`最下部に`process.env.NODE_ENV !== "production"`でガードして表示（CLAUDE.mdの旧記述`import.meta.env.DEV`はVite用でNext.jsでは動かないため修正済み）。日数スキップ（+1/+7/+30/指定日へ）・資金/ファン数/全18パラメータ/スタミナ/メンタルの直接編集・乱数シード固定/解除・トレンド即時発生（ただしトレンドシステム自体が未実装なのでゲームプレイへの効果はまだ無い、見た目上の確認用）・GameStateのJSONダンプをブラウザで動作確認済み。
 
-テスト: `npm run test` で138件全通過、`npx tsc --noEmit`・`npm run lint`・`npm run build`（Next.js静的エクスポート）もクリーンな状態を維持している。**エンジン層に手を入れたら必ずこの4つを確認すること。**
+日数スキップは`gameStore.ts`の`runOneDay()`（旧`advanceDayIfNeeded`から日次バッチ本体を抽出したもの）をAP残量を無視してループ呼び出しする方式。これで長期シミュレーションの検証がクリックなしで一気にできるようになった。
+
+**実プレイフィードバックで2点追加修正**:
+- 「指定日へ」は過去日を指定すると何もしない仕様だが、ボタンが押せる見た目のままだったため「反応しない」と誤解された。`targetDay <= day + 1`のときボタン自体をdisabledにして解消
+- IndexedDBを手動で消す手間を省くため「全リセット」ボタンを追加（`debugResetAll()`。`createInitialGameState()`を`rngSeed`/`version`/`lastResult`込みでset、次回の自動persistでIndexedDBも上書きされる）。破壊的操作のため共有`ConfirmDialog`で確認を挟む
+
+テスト: `npm run test` で149件全通過、`npx tsc --noEmit`・`npm run lint`・`npm run build`（Next.js静的エクスポート）もクリーンな状態を維持している。**エンジン層に手を入れたら必ずこの4つを確認すること。**
 
 ---
 
@@ -59,10 +68,10 @@
 | `equipment.ts`（今回新規）                            | `equipmentBonus()`（レベル×3）、`equipmentUpgradeCost()`（200×1.35^Lv）、`practiceEnvMultiplier()`（レッスン成長量%ブースト）、`upgradeEquipmentSlot()` |
 | `video.ts` / `song.ts` / `trend.ts` / `dailyBatch.ts` | 動画・楽曲の日次再生/DL処理、トレンド強度、日次バッチのオーケストレーション                                                  |
 | `genre.ts`                                            | ジャンル→ロール対応パラメータの対訳表（§7）                                                                                  |
-| `growth.ts`                                           | 活動経験値（レッスン対応パラメータ、成功時+0.15確定）＋経験系パラメータの確率成長（`experienceParamGains()`: **アクション成功時**に20%抽選+0.15、ロール自身の成否は問わない）。`mergeParamGains()`で複数成長源を合算 |
+| `growth.ts`                                           | 活動経験値（レッスン対応パラメータ、成功時+0.15確定）＋経験系パラメータの確率成長（`experienceParamGains()`: **アクション成功時**に20%抽選+0.15、ロール自身の成否は問わない）。`mergeParamGains()`で複数成長源を合算。**今回**: 愛嬌/アイデア/カリスマ/交渉/メンタルに専用レッスンが増えたため`LESSON_BACKED_PARAMS`へ移動、`EXPERIENCE_PARAMS`（専用レッスンなし・確率成長のみ）に残るのはラックだけになった |
 | `streaming.ts`                                        | 配信経済（§8.1）。スコア帯から同接・資金・ファン増減を算出                                                                   |
 | `actions.ts`                                          | `STREAM_ACTIONS`（雑談配信・歌枠配信の定義）、`executeStreamAction()`（今回`equipment`引数追加、マイク補正を全ロールに適用）、`applyRest()` |
-| `lessons.ts`                                          | `LESSONS`（レッスン7種）、`executeLesson()`（今回`equipment`引数追加、練習環境倍率を成長量に適用）。**要求値は全ロール（対象＋支援）それぞれ自分自身のパラメータの現在値−`lessonRequirementBonus`(10)** |
+| `lessons.ts`                                          | `LESSONS`（レッスン17種、全て1対象パラメータ固定式。技術/表現などの選択式UIは廃止し分割。愛嬌/アイデア/カリスマ/交渉/メンタル向けの新設5種を含む）、`executeLesson()`（`target`引数は廃止、`def.target`を直接使用。`equipment`引数で練習環境倍率を成長量に適用）。**要求値は全ロール（対象＋支援）それぞれ自分自身のパラメータの現在値−`lessonRequirementBonus`(10)** |
 | `project.ts`                                          | 動画プロジェクト（撮影→編集→サムネ/公開）・楽曲プロジェクト（作詞→作曲→レコーディング）の3工程進行（今回`equipment`引数追加、`stageEquipmentBonus()`でカメラ/PC補正を該当工程に適用）。要求値は`requirement(fans)`（配信と同じ、意図通り） |
 | `jobs.ts`                                             | `executeJob()`。**7種**のアルバイト（今回、交渉用の携帯ショップ店員・カリスマ用の呼び込みスタッフを追加）。ラック自己参照で常に基準成功率50%、賃金は`BALANCE.jobs.wageVariance`(0.8〜1.2)で小変動、ファンブルでも減額なし |
 
@@ -72,7 +81,7 @@
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `storage.ts`    | idb-keyvalをZustand persistの`StateStorage`に変換するアダプタ                                                                                           |
 | `migrations.ts` | セーブデータマイグレーション雛形。`CURRENT_SAVE_VERSION = 1`、現状は素通しのみ                                                                          |
-| `gameStore.ts`  | Zustandストア本体。`performStream` / `rest` / `performLesson` / `startVideoProject` / `startSongProject` / `performProjectStage` / `performJob` / `upgradeEquipment`（今回追加、APを消費しないメニュー操作）。`applyGrowth()`ヘルパーでパラメータ成長とスタミナ上限再計算を一元化。各アクションは消費スタミナに満たない場合は実行不可 |
+| `gameStore.ts`  | Zustandストア本体。`performStream` / `rest` / `performLesson` / `startVideoProject` / `startSongProject` / `performProjectStage` / `performJob` / `upgradeEquipment`（APを消費しないメニュー操作）。`applyGrowth()`ヘルパーでパラメータ成長とスタミナ上限再計算を一元化。各アクションは消費スタミナに満たない場合は実行不可。**今回追加**: `runOneDay()`（日次バッチ本体を`advanceDayIfNeeded`から抽出、AP残量を問わず呼べる）と`debugSkipDays` / `debugSetMoney` / `debugSetFans` / `debugSetParam` / `debugSetStamina` / `debugSetMental` / `debugSetRngSeed` / `debugRandomizeRngSeed` / `debugSpawnTrend`（デバッグパネル用アクション、`partialize`で永続化対象から除外） |
 
 ### src/ui/
 
@@ -80,7 +89,8 @@
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `components/*`   | Button / Modal / ConfirmDialog / MoneyDisplay / FansDisplay / ParamBar / RollResultLine / ScoreBandBadge / Toast                    |
 | `labels.ts`      | `PARAM_LABELS` / `GENRE_LABELS` / `SCORE_BAND_LABELS` / `VIDEO_KIND_LABELS` / `VIDEO_STAGE_LABELS` / `SONG_STAGE_LABELS` / `EQUIPMENT_LABELS`（今回追加）。アルバイトのラベルは`BALANCE.jobs.list[id].label`をそのまま使用 |
-| `GameScreen.tsx` | 現状唯一のゲーム画面。アルバイト・レッスン・動画/楽曲制作・**装備**（今回追加）の各セクションあり                                    |
+| `GameScreen.tsx` | 現状唯一のゲーム画面。アルバイト・レッスン・動画/楽曲制作・装備の各セクションあり。最下部に`process.env.NODE_ENV !== "production"`ガード付きで`<DebugPanel />`を表示（今回追加） |
+| `DebugPanel.tsx`（今回新規） | 開発用デバッグパネル本体。折りたたみ式（初期状態は閉じており「デバッグパネルを開く」ボタンのみ表示）。日数スキップ・資金/ファン数/全パラメータ/スタミナ/メンタル編集・乱数シード固定/解除・トレンド即時発生・GameStateダンプ |
 
 `app/page.tsx` は `<GameScreen />` を描画するだけの薄いエントリーポイント（CLAUDE.mdの規約通り、変更なし）。
 
@@ -128,19 +138,19 @@ fans が CLAUDE.md基準(200万〜350万)をやや下回っているのは§3で
 
 ## 5. 次にやること（提案）
 
-1. **動画/楽曲を含むバランス回帰テストの整備**（最優先）: CLAUDE.md記載の「バランス型bot 5年走行」「武道館モンテカルロ」「動画毎日投稿bot」がまだ存在しない。今回のバグ調査で使った一時シミュレーションスクリプト（`src/engine/_sim.test.ts`、都度作成・削除している使い捨てファイル）を土台に、動画/楽曲制作を組み込んだ恒久的なテストとして整備し、requirementLogSlope=80が本当に妥当か再検証する
-2. **開発用デバッグパネル**（CLAUDE.md記載の正式機能）: 日数スキップ・パラメータ直接編集・GameStateダンプ。長期検証に必須なので優先度高
-3. マイルストーン7: トレンド＋SNSチェック＋ゲーム購入
+1. **動画/楽曲を含むバランス回帰テストの整備**（最優先）: CLAUDE.md記載の「バランス型bot 5年走行」「武道館モンテカルロ」「動画毎日投稿bot」がまだ存在しない。今回のバグ調査で使った一時シミュレーションスクリプト（`src/engine/_sim.test.ts`、都度作成・削除している使い捨てファイル）を土台に、動画/楽曲制作を組み込んだ恒久的なテストとして整備し、requirementLogSlope=80が本当に妥当か再検証する。**デバッグパネルの日数スキップが使えるようになったので、手動プレイでの長期検証も現実的になった**
+2. マイルストーン7: トレンド＋SNSチェック＋ゲーム購入
     - トレンドの新規発生・タイトル生成ロジックが未確定（`trend.ts`は強度計算のみ実装済み）
     - 楽曲のpopularity（人気度）をトレンドと連動させる仕組みをここで確定させる
-4. マイルストーン8: ライブ実装時に装備の衣装(outfit)効果もまとめて有効化する
-5. マイルストーン9の残り（放置スケジュール）
+    - デバッグパネルの「トレンド即時発生」は箱（`Trend`オブジェクトを`trends`配列に追加）だけ実装済み。トレンド一致による要求値低下・発見ボーナス倍率（§9.2）をアクション側に実装したら、この既存の注入口でそのまま動作確認できるはず
+3. マイルストーン8: ライブ実装時に装備の衣装(outfit)効果もまとめて有効化する
+4. マイルストーン9の残り（放置スケジュール）
 
 ## 6. 動作確認コマンド
 
 ```
 npm run dev    # http://localhost:3000 でGameScreenが起動する
-npm run test   # Vitest。138件通過が現在のベースライン
+npm run test   # Vitest。149件通過が現在のベースライン
 npx tsc --noEmit
 npm run lint
 npm run build  # Next.js静的エクスポートのビルド確認

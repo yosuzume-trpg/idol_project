@@ -60,7 +60,7 @@ npm run lint       # ESLint
 - 乱数シードの固定/解除切替
 - 任意トレンドの即時発生（規模・ジャンル指定）
 - 現在のGameStateのJSONダンプ表示
-  本番ビルドでは無効化する（`import.meta.env.DEV` で分岐）。
+  本番ビルドでは無効化する（Next.jsなので`process.env.NODE_ENV !== "production"`で分岐。`import.meta.env.DEV`はVite用でこのプロジェクトでは使えない）。
 
 ## UIコンポーネント規約
 

@@ -1,5 +1,8 @@
 // =============================================================
 // 成長（§3.1） — 活動経験値（レッスン対応パラメータ）と経験系パラメータの確率成長
+// 実プレイフィードバックを受け、愛嬌/アイデア/カリスマ/交渉/メンタルにも専用レッスンを新設した（lessons.ts参照）。
+// 「専用レッスンがあるか」がLESSON_BACKED_PARAMS/EXPERIENCE_PARAMSの分類基準そのものなので、
+// この5種はLESSON_BACKED_PARAMS側へ移動し、ラックのみ経験系（専用レッスンなし・確率成長）として残る
 // =============================================================
 
 import { BALANCE } from "./balance";
@@ -19,17 +22,15 @@ export const LESSON_BACKED_PARAMS: ReadonlySet<ParamKey> = new Set([
     "reaction",
     "staminaParam",
     "gameSkill",
-]);
-
-/** 専用レッスンがない経験系パラメータ。対応アクション成功時に確率で上昇する（マイルストーン6で確率を確定） */
-export const EXPERIENCE_PARAMS: ReadonlySet<ParamKey> = new Set([
+    "charm",
     "idea",
     "charisma",
-    "charm",
     "negotiation",
     "mentalParam",
-    "luck",
 ]);
+
+/** 専用レッスンがない経験系パラメータ。対応アクション成功時に確率で上昇する。ラックのみキャラメイクのダイスロールで決まる特別枠として残す */
+export const EXPERIENCE_PARAMS: ReadonlySet<ParamKey> = new Set(["luck"]);
 
 /** ロール結果から活動経験値（レッスン対応パラメータ、確定加算）によるパラメータ上昇分を集計する */
 export function activityParamGains(outcomes: RollOutcome[]): Partial<Params> {

@@ -78,11 +78,11 @@ describe("executeStreamAction", () => {
         expect(result.band).toBe("great");
         expect(result.effects.money).toBeCloseTo(30);
         expect(result.effects.fans).toBeCloseTo(4.399983334027749);
-        // talk/reactionはレッスン対応パラメータなので活動経験値が確定で入る。
-        // charm/luckは経験系パラメータで確率成長(20%)の対象だが、randomのデフォルト値(1)では発生しない
+        // talk/reaction/charmはレッスン対応パラメータ（愛嬌は新設の「メイク」レッスンにより追加）なので活動経験値が確定で入る。
+        // luckは唯一残った経験系パラメータで確率成長(20%)の対象だが、randomのデフォルト値(1)では発生しない
         expect(result.effects.paramGains?.talk).toBeCloseTo(BALANCE.activityGain);
         expect(result.effects.paramGains?.reaction).toBeCloseTo(BALANCE.activityGain);
-        expect(result.effects.paramGains?.charm).toBeUndefined();
+        expect(result.effects.paramGains?.charm).toBeCloseTo(BALANCE.activityGain);
         expect(result.effects.paramGains?.luck).toBeUndefined();
 
         expect(staminaDelta).toBe(-BALANCE.activityStaminaCost.stream);
